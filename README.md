@@ -7,3 +7,5 @@ Android SD卡本地图片加载框架，支持LRU缓存，缩略图缓存，智�
 ![demo](https://github.com/AlexZhuo/AlxImageLoader/blob/master/ezgif.com-video-to-gif%20(7).gif)
 
 具体效果请见根目录的apk文件
+
+控制是否使用自定义占位符图片请修改 AlxImageLoader中的 public boolean usePlaceHolder变量

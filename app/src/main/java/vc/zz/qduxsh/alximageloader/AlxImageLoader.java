@@ -27,10 +27,12 @@ public class AlxImageLoader {
     private HashMap<String, SoftReference<Bitmap>> imageCache = new HashMap<String, SoftReference<Bitmap>>();
     private ConcurrentHashMap<ImageView,String> currentUrls = new ConcurrentHashMap<>();//记录一个imageView应该显示哪个Url，用于中断子线程
     private Bitmap defbitmap;
+    public int PLACE_HOLDER = R.drawable.qraved_bg_default;
+    public boolean usePlaceHolder = false;//是否使用占位图，默认不使用
 
     public AlxImageLoader(Context context) {
         this.mcontext = context;
-        defbitmap = BitmapFactory.decodeResource(mcontext.getResources(), R.drawable.qraved_bg_default);//没加载到图片的默认显示
+        defbitmap = BitmapFactory.decodeResource(mcontext.getResources(), PLACE_HOLDER);//加载完成之前显示的占位图
     }
 
     /**
@@ -40,10 +42,18 @@ public class AlxImageLoader {
      * @param imageViewWidth
      * @param resizeImageView
      * @param autoRotate
-     * @param imageCallback
+     * @param loadCompleteCallback
      * @return
      */
-    private Bitmap loadBitmapFromSD(final String uri, final ImageView imageView, final int imageViewWidth, final boolean resizeImageView, final boolean autoRotate,final boolean storeThumbnail ,final ImageCallback imageCallback) {
+    private Bitmap loadBitmapFromSD(
+            final String uri, //图片地址
+            final ImageView imageView, //要显示的imageView
+            final int imageViewWidth, //imageView的宽度，单位像素
+            final boolean resizeImageView, //是否要根据图像的宽高比例重设imageView的宽高比例
+            final boolean autoRotate,//是否根据图片的EXIF信息旋转图片
+            final boolean storeThumbnail ,//是否在sd卡中存储缩略图，下次加载快
+            final ImageCallback loadCompleteCallback) //如果从本地加载新的图片成功，就调用这个方法
+    {
         if (imageCache.containsKey(uri)) {//如果之前已经加载过这个图片，那么就从LRU缓存里加载
             SoftReference<Bitmap> SoftReference = imageCache.get(uri);
             Bitmap bitmap = SoftReference.get();
@@ -53,30 +63,69 @@ public class AlxImageLoader {
             }
         }
 
-        final int[] imageSize = {0,0};
         if(uri ==null)return null;
-        if(storeThumbnail) {
-            File file = new File(imageView.getContext().getCacheDir().getAbsolutePath().concat("/" + new File(uri).getName()));
-            if (file.exists() && file.length()>1000) {
-                //因为从file中获取图片的宽高存在IO操作，所以把每个图片的宽高缓存起来
-                Log.i("Alex", "现在是从cache目录中拿出来的缩略图");
-                Bitmap thumbnail = null;
-                try {
-                    thumbnail = BitmapFactory.decodeFile(file.getAbsolutePath());
-                }catch (OutOfMemoryError e){
-                    Log.i("Alex","加载缩略图出现oom");
-                }catch (Exception e){
+        if(storeThumbnail) {//如果要求从缓存中拿，那么就先去磁盘缓存里找
+            final Context context = imageView.getContext();
+            new AlxMultiTask<Void,Void,Bitmap>(){
+
+                @Override
+                protected Bitmap doInBackground(Void... params) {
+                    File file = new File(context.getCacheDir().getAbsolutePath().concat("/" + new File(uri).getName()));
+                    if (file.exists() && file.length()>1000) {
+                        //因为从file中获取图片的宽高存在IO操作，所以把每个图片的宽高缓存起来
+                        Log.i("Alex", "现在是从cache目录中拿出来的缩略图");
+                        Bitmap thumbnail = null;
+                        try {
+                            thumbnail = BitmapFactory.decodeFile(file.getAbsolutePath());
+                        }catch (OutOfMemoryError e){
+                            Log.i("Alex","加载缩略图出现oom");
+                        }catch (Exception e){
+
+                        }
+                        return thumbnail;
+                    }
+                    return null;
+                }
+
+                @Override
+                protected void onPostExecute(Bitmap bitmap) {
+                    super.onPostExecute(bitmap);
+                    String targetUrl = currentUrls.get(imageView);
+                    if(!uri.equals(targetUrl)) {
+                        Log.i("Alex","从缩略图加载的图片已经过时了");
+                        return;
+                    }
+                    if(bitmap != null && loadCompleteCallback != null){//如果
+                        loadCompleteCallback.imageLoaded(bitmap,imageView,uri);
+                        return;
+                    }else {
+                        loadNewSDImage(uri,imageView,imageViewWidth,resizeImageView,autoRotate,storeThumbnail,loadCompleteCallback);
+                    }
 
                 }
-                return thumbnail;
-            }
+            }.executeDependSDK();
+            return usePlaceHolder?defbitmap:null;//如果返回默认bitmap就用默认图占位，如果返回null就用imageView父控件的背景色占位,null更快
         }
-        //如果没有缓存options，那么就先获取options
+        //如果没有要求存储缩略图，直接从本地解析
+        loadNewSDImage(uri,imageView,imageViewWidth,resizeImageView,autoRotate,storeThumbnail,loadCompleteCallback);
+        return usePlaceHolder?defbitmap:null;//如果返回默认bitmap就用默认图占位，如果返回null就用imageView父控件的背景色占位,null更快
+    }
+
+    public void loadNewSDImage(
+            final String uri, //图片地址
+            final ImageView imageView, //要显示的imageView
+            final int imageViewWidth, //imageView的宽度，单位像素
+            final boolean resizeImageView, //是否要根据图像的宽高比例重设imageView的宽高比例
+            final boolean autoRotate,//是否根据图片的EXIF信息旋转图片
+            final boolean storeThumbnail ,//是否在sd卡中存储缩略图，下次加载快
+            final ImageCallback loadCompleteCallback //如果从本地加载新的图片成功，就调用这个方法
+    ){
         new AlxMultiTask<Void,Void,BitmapFactory.Options>(){
 
             @Override
             protected BitmapFactory.Options doInBackground(Void... params) {//这一块主要是用来拿宽高，确定要加载图片的大小的
                 //线程开启之后，由于滚动太快，已经过了一段时间，可能imageView要显示的图片已经换了，就没有必要执行下面的东西了
+                final int[] imageSize = {0,0};
                 String targetUrl = currentUrls.get(imageView);//滑动的非常快的时候会在此处中断
                 if(!uri.equals(targetUrl)) {
                     Log.i("Alex","这个图片已经过时了0");
@@ -115,10 +164,9 @@ public class AlxImageLoader {
                     return;
                 }
                 if (options == null) return;
-                asynGetBitmap(options,uri,imageView,imageViewWidth,resizeImageView,autoRotate,storeThumbnail,imageCallback);
+                asynGetBitmap(options,uri,imageView,imageViewWidth,resizeImageView,autoRotate,storeThumbnail,loadCompleteCallback);
             }
         }.executeDependSDK();
-        return defbitmap;//在子线程执行结束之前先用默认bitmap顶着
     }
 
     public static int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
@@ -207,7 +255,7 @@ public class AlxImageLoader {
 
                     @Override
                     protected Void doInBackground(Void... params) {
-                        imageCache.put(uri, new SoftReference<Bitmap>(bitmap));//将bitmap存到LRU缓存里
+                        if(!imageCache.containsKey(uri))imageCache.put(uri, new SoftReference<Bitmap>(bitmap));//将bitmap存到LRU缓存里
                         storeThumbnail(context,new File(uri).getName(),bitmap);
                         return null;
                     }
@@ -305,19 +353,25 @@ public class AlxImageLoader {
      * @param autoRotate 是否根据EXIF信息旋转图片
      * @param storeThumbnail 是否保存缩略图，第二次浏览同一张图片会变快
      */
-    public void setAsyncBitmapFromSD(String uri, ImageView imageView,int imageViewWidth,boolean resizeImageView,boolean autoRotate,boolean storeThumbnail) {
+    public void setAsyncBitmapFromSD(String uri, final ImageView imageView, int imageViewWidth, boolean resizeImageView, boolean autoRotate, boolean storeThumbnail) {
         //从LRU缓存里获取bitmap
         if(uri!=null) currentUrls.put(imageView,uri);//把url绑定在imageView上，用来防止显示缓存错误
         else currentUrls.put(imageView,"");
-        Bitmap cacheBitmap = loadBitmapFromSD(uri, imageView,imageViewWidth,resizeImageView,autoRotate,storeThumbnail,
+        final Bitmap cacheBitmap = loadBitmapFromSD(uri, imageView,imageViewWidth,resizeImageView,autoRotate,storeThumbnail,
+
                 new ImageCallback() {
-                    public void imageLoaded(Bitmap imageBitmap, ImageView imageView, String imageUrl) {
+                    public void imageLoaded(final Bitmap imageBitmap, final ImageView imageView, String imageUrl) {
                         Log.i("Alex","加载成功的bitmap宽高是"+imageBitmap.getWidth()+" x "+imageBitmap.getHeight());
-                        imageView.setImageBitmap(imageBitmap);
+                        imageView.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                imageView.setImageBitmap(imageBitmap);
+                            }
+                        });
                     }
                 });
         if(cacheBitmap!=null) {
-            if(uri!=null)imageView.setImageBitmap(cacheBitmap);
+            imageView.setImageBitmap(cacheBitmap);
             Log.i("Alex","缓存的bitmap是"+cacheBitmap.getWidth()+"   ::"+cacheBitmap.getHeight());
             ViewGroup.LayoutParams params = imageView.getLayoutParams();
             if(resizeImageView && params!=null && imageViewWidth>0 && cacheBitmap!=defbitmap) {//只有当现在缓存里的的bitmap不是默认bitmap的时候才重新修改大小，因为根据默认bitmap重设大小是没有意义的
@@ -345,6 +399,8 @@ public class AlxImageLoader {
             e.printStackTrace();
             return false;
         }
+        else return true;
+        Log.i("Alex","准备存储缩略图");
         OutputStream out = null;
         try {
             out = new FileOutputStream(file);

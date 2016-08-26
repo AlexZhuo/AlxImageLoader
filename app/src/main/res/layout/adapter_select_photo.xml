@@ -3,7 +3,7 @@
     android:id="@+id/rlPhoto"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:background="#000000">
+    android:background="#BBBBBB">
 
     <ImageView
         android:id="@+id/iv_photo"

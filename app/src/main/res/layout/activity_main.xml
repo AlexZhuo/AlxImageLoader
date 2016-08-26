@@ -5,6 +5,12 @@
     android:layout_height="match_parent"
     tools:context="vc.zz.qduxsh.alximageloader.MainActivity">
 
+    <ListView
+        android:id="@+id/lv_photos"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+    </ListView>
     <Button
         android:id="@+id/bt_add_photo"
         android:layout_width="200dp"
@@ -13,12 +19,6 @@
         android:layout_centerHorizontal="true"
         android:text="添加图片"
         />
-    <ListView
-        android:id="@+id/lv_photos"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
-
-    </ListView>
 
 
 </RelativeLayout>

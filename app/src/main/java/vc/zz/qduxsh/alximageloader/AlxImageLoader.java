@@ -73,8 +73,13 @@ public class AlxImageLoader {
                     File file = new File(context.getCacheDir().getAbsolutePath().concat("/" + new File(uri).getName()));
                     if (file.exists() && file.length()>1000) {
                         //因为从file中获取图片的宽高存在IO操作，所以把每个图片的宽高缓存起来
-                        Log.i("Alex", "现在是从cache目录中拿出来的缩略图");
                         Bitmap thumbnail = null;
+                        String targetUrl = currentUrls.get(imageView);
+                        if(!uri.equals(targetUrl)) {
+                            Log.i("Alex","从缩略图加载的图片已经过时了");
+                            return null;
+                        }
+                        Log.i("Alex", "现在是从cache目录中拿出来的缩略图");
                         try {
                             thumbnail = BitmapFactory.decodeFile(file.getAbsolutePath());
                         }catch (OutOfMemoryError e){

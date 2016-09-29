@@ -32,13 +32,15 @@ import android.widget.RelativeLayout;
 import java.io.File;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 
 public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPhotoEntity> implements OnClickListener{
-    public static final String QRAVED_CAMERA_PATH = "/Alex/camera";
+    public static final String CAMERA_PHOTO_PATH = "/Alex/camera";//这是相机拍照完毕之后存储相片的路径
     public String cameraPhotoUrl;
     private Activity mActivity;
     public ArrayList<SelectPhotoEntity> allPhotoList;
+    public HashMap<String,ArrayList<SelectPhotoEntity>> albumMap;//相册名称和该相册下面的图片
     int maxSelectedPhotoCount = 9;
 
     public static final int REQ_CAMARA = 1000;
@@ -46,11 +48,11 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
     private AlxImageLoader alxImageLoader;
     private int destWidth, destHeight;
     int screenWidth;
-    public SelectPhotoAdapter(Activity activity, ArrayList<SelectPhotoEntity> array,File file) {
+
+    public SelectPhotoAdapter(Activity activity, ArrayList<SelectPhotoEntity> array) {
         super(activity, R.layout.adapter_select_photo, array);
         this.mActivity = activity;
         this.allPhotoList = array;
-        this.mfile1 = file;
         this.alxImageLoader = new AlxImageLoader(activity);
         screenWidth = getScreenWidth(activity);
         this.destWidth = (screenWidth - 20) / 3;
@@ -58,7 +60,13 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
     }
 
     @Override
+    public int getCount() {
+        return allPhotoList.size()+1;//加一是为了那个相机图标
+    }
+
+    @Override
     public View getView(final int position, View convertView, ViewGroup parent) {
+        Log.i("Alex","要显示的position是"+position);
         ViewHolder viewHolder = null;
         if (convertView == null) {
             viewHolder = new ViewHolder();
@@ -79,23 +87,21 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
             lp.height = destHeight;
             viewHolder.iv_photo.setLayoutParams(lp);
         }
-        viewHolder.iv_photo.setImageDrawable(null);
-        viewHolder.iv_photo.setTag("no_image.jpg");
 
         viewHolder.iv_select.setVisibility(View.VISIBLE);
         viewHolder.iv_select.setImageDrawable(getDrawable(mActivity, R.drawable.unchoose));
         viewHolder.rlPhoto.setOnClickListener(null);
 
         if (position == 0) {//第一个位置显示一个小相机
-            viewHolder.iv_photo.setImageDrawable(getDrawable(mActivity,R.drawable.cameraadd));
             alxImageLoader.setAsyncBitmapFromSD(null,viewHolder.iv_photo,0,false,false,false);//防止回调覆盖了imageView原来的bitmap
+            viewHolder.iv_photo.setImageDrawable(getDrawable(mActivity,R.drawable.cameraadd));
             viewHolder.iv_select.setVisibility(View.GONE);
             viewHolder.rlPhoto.setOnClickListener(new OnClickListener() {
 
                 @Override
                 public void onClick(View v) {
                     cameraPhotoUrl = System.currentTimeMillis() + "Alex.jpg";//相机拍完之后的命名
-                    File dir = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + QRAVED_CAMERA_PATH);//设置相机拍摄完毕后放置的目录
+                    File dir = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + CAMERA_PHOTO_PATH);//设置相机拍摄完毕后放置的目录
                     if (!dir.exists()) dir.mkdirs();
                     try {
                         SharedPreferences camerasp = mActivity.getSharedPreferences("Camera", Context.MODE_PRIVATE);
@@ -114,8 +120,7 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
                     mActivity.startActivityForResult(intent, REQ_CAMARA);
                 }
             });
-        } else {
-            if ((allPhotoList != null) && (position >= 0) && (allPhotoList.size() > position) && (allPhotoList.get(position-1) != null)) {
+        } else if((allPhotoList != null) && (position >= 0) && (allPhotoList.size() >= position) && (allPhotoList.get(position-1) != null)){
                 final SelectPhotoEntity photoEntity = allPhotoList.get(position-1);
                 final String filePath = photoEntity.url;
 
@@ -128,9 +133,8 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
 
                 alxImageLoader.setAsyncBitmapFromSD(filePath,viewHolder.iv_photo,screenWidth/3,false,true,true);
                 viewHolder.rlPhoto.setTag(R.id.rlPhoto,position);
-                viewHolder.rlPhoto.setTag(R.id.tv_restaurantName,photoEntity);
                 viewHolder.rlPhoto.setOnClickListener(this);
-            }
+
         }
         return convertView;
     }
@@ -141,7 +145,6 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
             case R.id.rlPhoto:
                 Log.i("Alex","点击了rl photo");
                 int position = (int)v.getTag(R.id.rlPhoto);
-                SelectPhotoEntity photoEntity = (SelectPhotoEntity) v.getTag(R.id.tv_restaurantName);
                 ImageView ivSelect = (ImageView) v.findViewById(R.id.iv_select);
                 if (mActivity == null) return;
                 if (checkIsExistedInSelectedPhotoArrayList(position)) {
@@ -236,7 +239,7 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
     /**
      * 从系统相册里面取出图片的uri
      */
-    public void getAllPhotoFromLocalStorage(final Context context) {
+    public void getAllPhotoFromLocalStorage(final Context context, final Runnable completeCallback) {
         new AlxMultiTask<Void,Void,ArrayList<SelectPhotoEntity>>(){
 
             @Override
@@ -254,12 +257,24 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
                 if (mCursor != null) {
                     int size = mCursor.getCount();
                     if (size > 0) {
+                        if(albumMap == null)albumMap = new HashMap<>();
                         for (int i = 0; i < size; i++) {//遍历全部图片
                             mCursor.moveToPosition(i);
                             String path = mCursor.getString(mCursor.getColumnIndex(MediaStore.Images.Media.DATA));// 获取图片的路径
                             SelectPhotoEntity entity = new SelectPhotoEntity();
                             entity.url = path;//将图片的uri放到对象里去
                             allPhotoArrayList.add(entity);
+                            //获取该图片的父路径名
+                            String parentName = new File(path).getParentFile().getName();
+                            //根据父路径名将图片放入到相册的HashMap中
+                            Log.i("Alex","parent是"+parentName+"  准备放进map");
+                            if (!albumMap.containsKey(parentName)) {
+                                ArrayList<SelectPhotoEntity> arrayList = new ArrayList();
+                                arrayList.add(entity);
+                                albumMap.put(parentName, arrayList);
+                            } else {
+                                albumMap.get(parentName).add(entity);
+                            }
                         }
                     }
                     mCursor.close();
@@ -271,9 +286,11 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
             protected void onPostExecute(ArrayList<SelectPhotoEntity> photoArrayList) {
                 super.onPostExecute(photoArrayList);
                 if(photoArrayList == null)return;
-
+                allPhotoList.clear();
                 allPhotoList.addAll(photoArrayList);
+                Log.i("Alex","allPhotoList是"+allPhotoList);
                 notifyDataSetChanged();
+                if(completeCallback != null)completeCallback.run();
             }
         }.executeDependSDK();
     }

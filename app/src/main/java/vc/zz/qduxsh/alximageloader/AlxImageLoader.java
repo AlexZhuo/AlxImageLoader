@@ -362,6 +362,7 @@ public class AlxImageLoader {
         //从LRU缓存里获取bitmap
         if(uri!=null) currentUrls.put(imageView,uri);//把url绑定在imageView上，用来防止显示缓存错误
         else currentUrls.put(imageView,"");
+        imageView.setImageDrawable(null);//清空上次的显示
         final Bitmap cacheBitmap = loadBitmapFromSD(uri, imageView,imageViewWidth,resizeImageView,autoRotate,storeThumbnail,
 
                 new ImageCallback() {

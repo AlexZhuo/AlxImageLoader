@@ -29,7 +29,9 @@ public abstract class AlxMultiTask<Params, Progress, Result> extends AsyncTask<P
         private final AtomicInteger mCount = new AtomicInteger(1);
 
         public Thread newThread(Runnable r) {
-            return new Thread(r, "AlxAsyncTask #" + mCount.getAndIncrement());
+            Thread thread = new Thread(r, "AlxMultiTask #" + mCount.getAndIncrement());
+            thread.setPriority(Thread.MIN_PRIORITY);
+            return thread;
         }
     };
     public void executeDependSDK(Params...params){

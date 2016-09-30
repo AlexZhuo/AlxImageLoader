@@ -131,6 +131,7 @@ public class AlbumBean {
                     String path = mCursor.getString(0);// 获取图片的路径
                     SelectPhotoAdapter.SelectPhotoEntity entity = new SelectPhotoAdapter.SelectPhotoEntity();
                     entity.url = path;//将图片的uri放到对象里去
+                    if(!"Recently".equals(album.folderName) && !new File(path).getParentFile().getAbsolutePath().equals(album.albumFolder.getAbsolutePath()))continue;//经常会有相册相互包含的情况
                     photoList.add(entity);
                 }
                 mCursor.close();

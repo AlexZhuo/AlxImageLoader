@@ -26,9 +26,7 @@ import android.widget.TextView;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class SelectPhotoActivity extends AppCompatActivity implements SelectPhotoAdapter.CallBackActivity,View.OnClickListener{
     SelectPhotoAdapter allPhotoAdapter =  null;
@@ -38,7 +36,7 @@ public class SelectPhotoActivity extends AppCompatActivity implements SelectPhot
     ListView lv_albumlist;
     ImageView iv_showalbum;
     AlxPermissionHelper permissionHelper = new AlxPermissionHelper();
-    ArrayList<SelectPhotoAdapter.SelectPhotoEntity> selectedPhotoList = null;
+    ArrayList<SelectPhotoAdapter.SelectPhotoEntity> selectedPhotoList = null;//用于放置即将要发送的photo
     private AlbumListAdapter albumListAdapter;
     private List<AlbumBean> albumList = new ArrayList<>();//相册列表
     boolean isShowAlbum;
@@ -68,26 +66,42 @@ public class SelectPhotoActivity extends AppCompatActivity implements SelectPhot
         permissionHelper.checkPermission(this, new AlxPermissionHelper.AskPermissionCallBack() {
             @Override
             public void onSuccess() {
-                allPhotoAdapter.getAllPhotoFromLocalStorage(SelectPhotoActivity.this, new Runnable() {
+                //扫描手机上500张最近注册过的图片
+                SelectPhotoAdapter.get500PhotoFromLocalStorage(SelectPhotoActivity.this, new SelectPhotoAdapter.LookUpPhotosCallback() {
                     @Override
-                    public void run() {
-                        albumListAdapter = new AlbumListAdapter(SelectPhotoActivity.this,albumList = getAlbumList(allPhotoAdapter.albumMap));
+                    public void onSuccess(ArrayList<SelectPhotoAdapter.SelectPhotoEntity> photoArrayList) {
+                        Log.i("Alex","查找500张图片成功,数量是"+photoArrayList.size());
+                        allPhotoAdapter.allPhotoList.clear();
+                        allPhotoAdapter.allPhotoList.addAll(photoArrayList);
+                        allPhotoAdapter.notifyDataSetChanged();
+                    }
+                });
+                //查找并设置手机上的所有相册
+                AlbumBean.getAllAlbumFromLocalStorage(SelectPhotoActivity.this, new AlbumBean.AlbumListCallback() {
+                    @Override
+                    public void onSuccess(ArrayList<AlbumBean> result) {
+                        albumList = result;
+                        albumListAdapter = new AlbumListAdapter(SelectPhotoActivity.this,albumList);
                         lv_albumlist.setAdapter(albumListAdapter);
                     }
-                });//扫描手机上的所有注册过的图片
+                });
                 lv_albumlist.setOnItemClickListener(new AdapterView.OnItemClickListener() {
                     @Override
                     public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                         if(albumList!=null && position < albumList.size() && albumList.get(position) != null){//满足条件才能set
-                            tv_album_name.setText(albumList.get(position).getFolderName());
+                            tv_album_name.setText(albumList.get(position).folderName);
                         }
                         isShowAlbum=false;
                         hideAlbum();
-                        ArrayList<SelectPhotoAdapter.SelectPhotoEntity> newAlbumPhotoList = allPhotoAdapter.albumMap.get(albumList.get(position).getFolderName());
-                        Log.i("Alex","new photo list是"+newAlbumPhotoList);
-                        allPhotoAdapter.allPhotoList.clear();//因为是ArrayAdapter，所以引用不能重置
-                        allPhotoAdapter.allPhotoList.addAll(newAlbumPhotoList);
-                        allPhotoAdapter.notifyDataSetChanged();
+                        AlbumBean.getAlbumPhotosFromLocalStorage(SelectPhotoActivity.this, albumList.get(position), new AlbumBean.AlbumPhotosCallback() {
+                            @Override
+                            public void onSuccess(ArrayList<SelectPhotoAdapter.SelectPhotoEntity> photos) {
+                                Log.i("Alex","new photo list是"+photos);
+                                allPhotoAdapter.allPhotoList.clear();//因为是ArrayAdapter，所以引用不能重置
+                                allPhotoAdapter.allPhotoList.addAll(photos);
+                                allPhotoAdapter.notifyDataSetChanged();
+                            }
+                        });
                     }
                 });
             }
@@ -106,30 +120,10 @@ public class SelectPhotoActivity extends AppCompatActivity implements SelectPhot
     }
 
 
-    private List<AlbumBean> getAlbumList(HashMap<String, ArrayList<SelectPhotoAdapter.SelectPhotoEntity>> mAllMap){
-        if(mAllMap == null || mAllMap.size() == 0){
-            return null;
-        }
-        List<AlbumBean> albumList = new ArrayList<>();
-        for (Map.Entry<String, ArrayList<SelectPhotoAdapter.SelectPhotoEntity>> entry : mAllMap.entrySet()) {
-            AlbumBean mAlbumBean = new AlbumBean();
-            String key = entry.getKey();
-            List<SelectPhotoAdapter.SelectPhotoEntity> value = entry.getValue();
-
-            mAlbumBean.setFolderName(key);
-            mAlbumBean.setImageCounts(value.size());
-            if (value.size() > 0) {
-                mAlbumBean.setTopImagePath(value.get(0).url);//获取该组的第一张图片
-            }
-            albumList.add(mAlbumBean);
-        }
-        return albumList;
-    }
-
 
     @Override
     public void updateSelectActivityViewUI() {
-        if (allPhotoAdapter.selectedPhotosPosition != null && allPhotoAdapter.selectedPhotosPosition.size()>0) {
+        if (allPhotoAdapter.selectedPhotosSet != null && allPhotoAdapter.selectedPhotosSet.size()>0) {
             tv_done.setTextColor(Color.BLACK);
             tv_done.setClickable(true);
             tv_done.setEnabled(true);
@@ -162,49 +156,37 @@ public class SelectPhotoActivity extends AppCompatActivity implements SelectPhot
                     } catch (Exception ex) {
                         ex.printStackTrace();
                     }
-
                     File dir = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + SelectPhotoAdapter.CAMERA_PHOTO_PATH);
-                    if (!dir.exists()) {
-                        dir.mkdirs();
-                    }
+                    if (!dir.exists()) dir.mkdirs();
                     File file = new File(dir, cameraPhotoUrl);//这个文件指针指向拍好的图片文件
-
                     final String imageFilePath = file.getAbsolutePath();
                     Log.i("Alex", "拍摄图片暂存到了" + imageFilePath + "  角度是" + AlxImageLoader.readPictureDegree(imageFilePath));
-
                     //把图片压缩成指定宽高并且保存到本地
-                    //bug修复，没什么好压缩的，不压了
                     file = new File(imageFilePath);
                     String albumUrl = null;
-                    if (file.exists()) {
-                        //bug修复，2015、12/15 Alex将拍摄的照片存到系统相册里去
-                        Log.i("Alex", "准备存储到相册");
-                        try {
-                            ContentResolver cr = SelectPhotoActivity.this.getContentResolver();
-                            //在往相册存储的时候返回url是DCIM的url，不是原来的了，而且exif信息也全都没了
-                            // /storage/sdcard0/qraved/camera/1461321361499.jpg
-                            // /storage/sdcard0/DCIM/Camera/1461321370065.jpg
-                            //下面这句是把相机返回的文件拷贝到系统相册里面去,并且生产缩略图存在相册里，然后发送广播更新图片list
-                            albumUrl = AlxBitmapUtils.insertImage(this, cr, file, true);//返回值为要发送图片的url
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-
-                        //bug修复完毕
-
-                        // 提交数据，和选择图片用的同一个ArrayList
-
-                        SelectPhotoAdapter.SelectPhotoEntity photoEntity = new SelectPhotoAdapter.SelectPhotoEntity();
-                        //因为存储到相册之后exif全都没了，所以应该传源文件的路径
-                        photoEntity.url = albumUrl;
-                        if(selectedPhotoList == null)selectedPhotoList = new ArrayList<>(1);
-                        selectedPhotoList.add(photoEntity);
-                        Intent intent = new Intent();
-                        intent.putExtra("selectPhotos", selectedPhotoList);//把获取到图片交给别的Activity
-                        intent.putExtra("isFromCamera", true);
-                        setResult(SELECT_PHOTO_OK, intent);
-                        finish();
+                    if (!file.exists()) break;
+                    Log.i("Alex", "准备存储到相册");
+                    try {
+                        ContentResolver cr = SelectPhotoActivity.this.getContentResolver();
+                        //在往相册存储的时候返回url是DCIM的url，不是原来的了，而且exif信息也全都没了
+                        // /storage/sdcard0/Alex/camera/1461321361499.jpg
+                        // /storage/sdcard0/DCIM/Camera/1461321370065.jpg
+                        //下面这句是把相机返回的文件拷贝到系统相册里面去,并且生产缩略图存在相册里，然后发送广播更新图片list
+                        albumUrl = AlxBitmapUtils.insertImage(this, cr, file, true);//返回值为要发送图片的url
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
+                    // 提交数据，和选择图片用的同一个ArrayList
+                    SelectPhotoAdapter.SelectPhotoEntity photoEntity = new SelectPhotoAdapter.SelectPhotoEntity();
+                    //因为存储到相册之后exif全都没了，所以应该传源文件的路径
+                    photoEntity.url = albumUrl;
+                    if(selectedPhotoList == null)selectedPhotoList = new ArrayList<>(1);
+                    selectedPhotoList.add(photoEntity);
+                    Intent intent = new Intent();
+                    intent.putExtra("selectPhotos", selectedPhotoList);//把获取到图片交给别的Activity
+                    intent.putExtra("isFromCamera", true);
+                    setResult(SELECT_PHOTO_OK, intent);
+                    finish();
                     break;
                 }
             }
@@ -219,7 +201,7 @@ public class SelectPhotoActivity extends AppCompatActivity implements SelectPhot
                 break;
             case R.id.tv_done:
                 if(selectedPhotoList == null)selectedPhotoList = new ArrayList<>(9);
-                for(int i:allPhotoAdapter.selectedPhotosPosition)selectedPhotoList.add(allPhotoAdapter.allPhotoList.get(i-1));
+                for(SelectPhotoAdapter.SelectPhotoEntity p:allPhotoAdapter.selectedPhotosSet)selectedPhotoList.add(p);
                 Intent intent = new Intent();
                 intent.putExtra("selectPhotos", selectedPhotoList);//把获取到图片交给别的Activity
                 intent.putExtra("isFromCamera", false);
@@ -227,19 +209,18 @@ public class SelectPhotoActivity extends AppCompatActivity implements SelectPhot
                 finish();
                 break;
             case R.id.rl_center:
-                if(isShowAlbum){//现在是展示album的状态
-                    hideAlbum();
-                }else{//现在是关闭（正常）状态
-                    showAlbum();
-                }
+                if(isShowAlbum)hideAlbum();//现在是展示album的状态
+                else showAlbum();//现在是关闭（正常）状态
                 break;
             case R.id.rl_album:
                 hideAlbum();
                 break;
-
         }
     }
 
+    /**
+     * 隐藏相册选择页
+     */
     void hideAlbum(){
         if(Build.VERSION.SDK_INT >=11) {
             ObjectAnimator animator1 = ObjectAnimator.ofFloat(rl_album, "alpha", 1.0f, 0.0f);
@@ -261,6 +242,9 @@ public class SelectPhotoActivity extends AppCompatActivity implements SelectPhot
         isShowAlbum=false;
     }
 
+    /**
+     * 显示相册选择页
+     */
     void showAlbum(){
         if(Build.VERSION.SDK_INT>=11) {
             rl_album.setVisibility(View.VISIBLE);//一定要先顯示，才能做動畫操作

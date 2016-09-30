@@ -32,7 +32,6 @@ import android.widget.RelativeLayout;
 import java.io.File;
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 
 public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPhotoEntity> implements OnClickListener{
@@ -40,7 +39,6 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
     public String cameraPhotoUrl;
     private Activity mActivity;
     public ArrayList<SelectPhotoEntity> allPhotoList;
-    public HashMap<String,ArrayList<SelectPhotoEntity>> albumMap;//相册名称和该相册下面的图片
     int maxSelectedPhotoCount = 9;
 
     public static final int REQ_CAMARA = 1000;
@@ -125,14 +123,14 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
                 final String filePath = photoEntity.url;
 
                 viewHolder.iv_select.setVisibility(View.VISIBLE);
-                if (checkIsExistedInSelectedPhotoArrayList(position)) {
+                if (checkIsExistedInSelectedPhotoArrayList(photoEntity)) {
                     viewHolder.iv_select.setImageDrawable(getDrawable(mActivity, R.drawable.choose));
                 } else {
                     viewHolder.iv_select.setImageDrawable(getDrawable(mActivity, R.drawable.unchoose));
                 }
 
                 alxImageLoader.setAsyncBitmapFromSD(filePath,viewHolder.iv_photo,screenWidth/3,false,true,true);
-                viewHolder.rlPhoto.setTag(R.id.rlPhoto,position);
+                viewHolder.rlPhoto.setTag(R.id.rlPhoto,photoEntity);
                 viewHolder.rlPhoto.setOnClickListener(this);
 
         }
@@ -144,15 +142,15 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
         switch (v.getId()){
             case R.id.rlPhoto:
                 Log.i("Alex","点击了rl photo");
-                int position = (int)v.getTag(R.id.rlPhoto);
+                SelectPhotoEntity entity = (SelectPhotoEntity) v.getTag(R.id.rlPhoto);
                 ImageView ivSelect = (ImageView) v.findViewById(R.id.iv_select);
                 if (mActivity == null) return;
-                if (checkIsExistedInSelectedPhotoArrayList(position)) {
+                if (checkIsExistedInSelectedPhotoArrayList(entity)) {
                     ivSelect.setImageDrawable(getDrawable(mActivity, R.drawable.unchoose));
-                    removeSelectedPhoto(position);
+                    removeSelectedPhoto(entity);
                 } else if (!isFullInSelectedPhotoArrayList()){
                     ivSelect.setImageDrawable(getDrawable(mActivity, R.drawable.choose));
-                    addSelectedPhoto(position);
+                    addSelectedPhoto(entity);
                 } else {
                     return;
                 }
@@ -216,6 +214,21 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
             sb.append('}');
             return sb.toString();
         }
+
+        @Override
+        public int hashCode() {//使用hashcode和equals方法防止重复
+            if(url != null)return url.hashCode();
+            return super.hashCode();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if(o instanceof SelectPhotoEntity){
+                return o.hashCode() == this.hashCode();
+            }
+            return super.equals(o);
+
+        }
     }
 
     public static int getScreenWidth(Activity activity) {
@@ -239,7 +252,7 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
     /**
      * 从系统相册里面取出图片的uri
      */
-    public void getAllPhotoFromLocalStorage(final Context context, final Runnable completeCallback) {
+    public static void get500PhotoFromLocalStorage(final Context context, final LookUpPhotosCallback completeCallback) {
         new AlxMultiTask<Void,Void,ArrayList<SelectPhotoEntity>>(){
 
             @Override
@@ -252,33 +265,19 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
                 String sortOrder = MediaStore.Images.Media.DATE_MODIFIED + " desc";//设置拍摄日期为倒序
                 Log.i("Alex","准备查找图片");
                 // 只查询jpeg和png的图片
-                Cursor mCursor = mContentResolver.query(mImageUri, null, MediaStore.Images.Media.MIME_TYPE + "=? or " + MediaStore.Images.Media.MIME_TYPE + "=?", new String[]{"image/jpeg", "image/png"}, sortOrder);
-
-                if (mCursor != null) {
-                    int size = mCursor.getCount();
-                    if (size > 0) {
-                        if(albumMap == null)albumMap = new HashMap<>();
-                        for (int i = 0; i < size; i++) {//遍历全部图片
-                            mCursor.moveToPosition(i);
-                            String path = mCursor.getString(mCursor.getColumnIndex(MediaStore.Images.Media.DATA));// 获取图片的路径
-                            SelectPhotoEntity entity = new SelectPhotoEntity();
-                            entity.url = path;//将图片的uri放到对象里去
-                            allPhotoArrayList.add(entity);
-                            //获取该图片的父路径名
-                            String parentName = new File(path).getParentFile().getName();
-                            //根据父路径名将图片放入到相册的HashMap中
-                            Log.i("Alex","parent是"+parentName+"  准备放进map");
-                            if (!albumMap.containsKey(parentName)) {
-                                ArrayList<SelectPhotoEntity> arrayList = new ArrayList();
-                                arrayList.add(entity);
-                                albumMap.put(parentName, arrayList);
-                            } else {
-                                albumMap.get(parentName).add(entity);
-                            }
-                        }
-                    }
-                    mCursor.close();
+                Cursor mCursor = mContentResolver.query(mImageUri, new String[]{MediaStore.Images.Media.DATA}, MediaStore.Images.Media.MIME_TYPE + "=? or " + MediaStore.Images.Media.MIME_TYPE + "=?", new String[]{"image/jpeg", "image/png"}, sortOrder+" limit 500");
+                if (mCursor == null) return allPhotoArrayList;
+                int size = mCursor.getCount();
+                Log.i("Alex","查到的size是"+size);
+                if (size == 0) return allPhotoArrayList;
+                for (int i = 0; i < size; i++) {//遍历全部图片
+                    mCursor.moveToPosition(i);
+                    String path = mCursor.getString(0);// 获取图片的路径
+                    SelectPhotoEntity entity = new SelectPhotoEntity();
+                    entity.url = path;//将图片的uri放到对象里去
+                    allPhotoArrayList.add(entity);
                 }
+                mCursor.close();
                 return allPhotoArrayList;
             }
 
@@ -286,13 +285,16 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
             protected void onPostExecute(ArrayList<SelectPhotoEntity> photoArrayList) {
                 super.onPostExecute(photoArrayList);
                 if(photoArrayList == null)return;
-                allPhotoList.clear();
-                allPhotoList.addAll(photoArrayList);
-                Log.i("Alex","allPhotoList是"+allPhotoList);
-                notifyDataSetChanged();
-                if(completeCallback != null)completeCallback.run();
+                if(completeCallback != null)completeCallback.onSuccess(photoArrayList);
             }
         }.executeDependSDK();
+    }
+
+    /**
+     * 查询照片成功的回调函数
+     */
+    interface LookUpPhotosCallback {
+        void onSuccess(ArrayList<SelectPhotoEntity> photoArrayList);
     }
 
     /**
@@ -300,21 +302,21 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
      * @param entity
      * @return
      */
-    HashSet<Integer> selectedPhotosPosition = new HashSet<>(9);
-    public boolean checkIsExistedInSelectedPhotoArrayList(int position) {
-        if (selectedPhotosPosition == null || selectedPhotosPosition.size() == 0) return false;
-        if(selectedPhotosPosition.contains(position))return true;
+    HashSet<SelectPhotoEntity> selectedPhotosSet = new HashSet<>(9);
+    public boolean checkIsExistedInSelectedPhotoArrayList(SelectPhotoEntity photo) {
+        if (selectedPhotosSet == null || selectedPhotosSet.size() == 0) return false;
+        if(selectedPhotosSet.contains(photo))return true;
         return false;
     }
 
-    public void removeSelectedPhoto(int position) {
-        selectedPhotosPosition.remove(position);
+    public void removeSelectedPhoto(SelectPhotoEntity photo) {
+        selectedPhotosSet.remove(photo);
     }
     public boolean isFullInSelectedPhotoArrayList() {
-        if (maxSelectedPhotoCount > 0 && selectedPhotosPosition.size() < maxSelectedPhotoCount) return false;
+        if (maxSelectedPhotoCount > 0 && selectedPhotosSet.size() < maxSelectedPhotoCount) return false;
         return true;
     }
-    public void addSelectedPhoto(int position) {
-        selectedPhotosPosition.add(position);
+    public void addSelectedPhoto(SelectPhotoEntity photo) {
+        selectedPhotosSet.add(photo);
     }
 }

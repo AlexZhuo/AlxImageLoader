@@ -51,9 +51,9 @@ public class AlbumListAdapter extends BaseAdapter {
         }else{
             viewHolder = (ViewHolder) convertView.getTag();
         }
-        mLoader.setAsyncBitmapFromSD(list.get(position).getTopImagePath(),viewHolder.mImageView,300,false,true,true);
-        viewHolder.mTextViewTitle.setText(list.get(position).getFolderName());
-        viewHolder.mTextViewCounts.setText(list.get(position).getImageCounts()+"");
+        mLoader.setAsyncBitmapFromSD(list.get(position).topImagePath,viewHolder.mImageView,300,false,true,true);
+        viewHolder.mTextViewTitle.setText(list.get(position).folderName);
+        viewHolder.mTextViewCounts.setText(list.get(position).imageCounts+"");
         return convertView;
     }
 

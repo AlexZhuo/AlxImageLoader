@@ -20,7 +20,7 @@
             android:ellipsize="end"
             android:gravity="center"
             android:maxLines="1"
-            android:text="select photo"
+            android:text="Recently"
             android:textColor="#111111"
             android:textSize="16sp"
             android:layout_alignParentTop="true"

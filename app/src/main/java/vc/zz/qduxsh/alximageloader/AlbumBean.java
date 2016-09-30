@@ -101,7 +101,7 @@ public class AlbumBean {
         }.executeDependSDK();
     }
 
-    interface AlbumListCallback{
+    public interface AlbumListCallback{
         void onSuccess(ArrayList<AlbumBean> albumList);
     }
 
@@ -118,7 +118,10 @@ public class AlbumBean {
                 String sortOrder = MediaStore.Images.Media.DATE_MODIFIED + " desc";//设置拍摄日期为倒序
                 Log.i("Alex","查询条件是=="+album.albumFolder.getAbsolutePath());
                 // 只该查询该相册下的jpeg和png的图片
-                Cursor mCursor = mContentResolver.query(mImageUri, new String[]{MediaStore.Images.Media.DATA}, "("+MediaStore.Images.Media.MIME_TYPE + "=? or " + MediaStore.Images.Media.MIME_TYPE + "=?)"+" AND " + MediaStore.Images.Media.DATA + " LIKE '"+album.albumFolder.getAbsolutePath()+"%'", new String[]{"image/jpeg", "image/png"}, sortOrder);
+                Cursor mCursor = null;
+                //这里要区分自设的最近500张的相册和普通相册
+                if("Recently".equals(album.folderName))  mCursor = mContentResolver.query(mImageUri, new String[]{MediaStore.Images.Media.DATA}, MediaStore.Images.Media.MIME_TYPE + "=? or " + MediaStore.Images.Media.MIME_TYPE + "=?", new String[]{"image/jpeg", "image/png"}, sortOrder+" LIMIT 500");
+                else mCursor = mContentResolver.query(mImageUri, new String[]{MediaStore.Images.Media.DATA}, "("+MediaStore.Images.Media.MIME_TYPE + "=? or " + MediaStore.Images.Media.MIME_TYPE + "=?)"+" AND " + MediaStore.Images.Media.DATA + " LIKE '"+album.albumFolder.getAbsolutePath()+"%'", new String[]{"image/jpeg", "image/png"}, sortOrder);
                 if(mCursor == null)return null;
                 int size = mCursor.getCount();
                 Log.i("Alex","查到的该相册的图片的数量是"+size);
@@ -143,7 +146,7 @@ public class AlbumBean {
         }.executeDependSDK();
     }
 
-    interface AlbumPhotosCallback{
+    public interface AlbumPhotosCallback{
         void onSuccess(ArrayList<SelectPhotoAdapter.SelectPhotoEntity> photos);
     }
 }

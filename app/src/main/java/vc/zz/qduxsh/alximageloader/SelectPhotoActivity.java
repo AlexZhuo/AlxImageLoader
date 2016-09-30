@@ -70,17 +70,30 @@ public class SelectPhotoActivity extends AppCompatActivity implements SelectPhot
                 SelectPhotoAdapter.get500PhotoFromLocalStorage(SelectPhotoActivity.this, new SelectPhotoAdapter.LookUpPhotosCallback() {
                     @Override
                     public void onSuccess(ArrayList<SelectPhotoAdapter.SelectPhotoEntity> photoArrayList) {
+                        if(photoArrayList == null || photoArrayList.size() ==0)return;
                         Log.i("Alex","查找500张图片成功,数量是"+photoArrayList.size());
                         allPhotoAdapter.allPhotoList.clear();
                         allPhotoAdapter.allPhotoList.addAll(photoArrayList);
                         allPhotoAdapter.notifyDataSetChanged();
+                        //添加一个默认的相册用来存放这最近的500张图片
+                        AlbumBean defaultAlbum = new AlbumBean();
+                        defaultAlbum.albumFolder = Environment.getExternalStorageDirectory();
+                        Log.i("Alex","folder是"+defaultAlbum.albumFolder.getAbsolutePath());
+                        defaultAlbum.topImagePath = photoArrayList.get(0).url;
+                        defaultAlbum.imageCounts = photoArrayList.size();
+                        defaultAlbum.folderName = "Recently";
+                        albumList.add(0,defaultAlbum);
+                        if(albumListAdapter != null){//这个回调优先于查找相册回调
+                            Log.i("Alex","500张图片落后回调");
+                            albumListAdapter.notifyDataSetChanged();
+                        }
                     }
                 });
                 //查找并设置手机上的所有相册
                 AlbumBean.getAllAlbumFromLocalStorage(SelectPhotoActivity.this, new AlbumBean.AlbumListCallback() {
                     @Override
                     public void onSuccess(ArrayList<AlbumBean> result) {
-                        albumList = result;
+                        albumList.addAll(result);
                         albumListAdapter = new AlbumListAdapter(SelectPhotoActivity.this,albumList);
                         lv_albumlist.setAdapter(albumListAdapter);
                     }

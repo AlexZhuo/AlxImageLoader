@@ -160,7 +160,7 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
     }
 
 
-    interface CallBackActivity{
+    public interface CallBackActivity{
         void updateSelectActivityViewUI();
 
     }
@@ -293,7 +293,7 @@ public class SelectPhotoAdapter extends ArrayAdapter<SelectPhotoAdapter.SelectPh
     /**
      * 查询照片成功的回调函数
      */
-    interface LookUpPhotosCallback {
+    public interface LookUpPhotosCallback {
         void onSuccess(ArrayList<SelectPhotoEntity> photoArrayList);
     }
 
